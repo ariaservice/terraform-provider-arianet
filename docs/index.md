@@ -38,6 +38,6 @@ variable "arianet_token" {
 ### Optional
 
 - `endpoint` (String) Root URL of the arianet API gateway. Defaults to `https://api.ariaservice.net`, or the `ARIANET_API_URL` environment variable. Must be https (plain http is allowed only for localhost).
-- `max_retries` (Number) How many times a request is retried on HTTP 429 (honouring `Retry-After`) and a read on 502/503/504. Default 5.
+- `max_retries` (Number) How many times a request is retried on HTTP 429 (honouring `Retry-After`, else `RateLimit-Reset`) and a read on 502/503/504. Default 5.
 - `poll_interval` (String) How long to wait between polls of a running action, as a Go duration such as `2s` (default). The wait grows up to 10s.
 - `token` (String, Sensitive) API token with the `cloud:servers:read`/`cloud:servers:write` scopes (and `ssh_keys` scopes for `arianet_ssh_key`). May be set with the `ARIANET_TOKEN` environment variable.

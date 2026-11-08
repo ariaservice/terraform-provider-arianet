@@ -72,7 +72,7 @@ func (p *arianetProvider) Schema(_ context.Context, _ provider.SchemaRequest, re
 			},
 			"max_retries": schema.Int64Attribute{
 				Optional:    true,
-				Description: "How many times a request is retried on HTTP 429 (honouring `Retry-After`) and a read on 502/503/504. Default 5.",
+				Description: "How many times a request is retried on HTTP 429 (honouring `Retry-After`, else `RateLimit-Reset`) and a read on 502/503/504. Default 5.",
 			},
 		},
 	}
@@ -157,6 +157,7 @@ func (p *arianetProvider) DataSources(_ context.Context) []func() datasource.Dat
 		newPlansDataSource,
 		newLocationsDataSource,
 		newPricingDataSource,
+		newServerCostsDataSource,
 		newServerDataSource,
 		newNetworkDataSource,
 		newSSHKeyDataSource,

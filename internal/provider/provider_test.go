@@ -129,6 +129,9 @@ data "arianet_plans" "fra" {
   datacenter = "eu-central-1"
 }
 data "arianet_pricing" "all" {}
+data "arianet_pricing" "fra" {
+  datacenter = "eu-central-1"
+}
 data "arianet_load_balancer_types" "all" {}
 `,
 			Check: tfresource.ComposeAggregateTestCheckFunc(
@@ -141,9 +144,20 @@ data "arianet_load_balancer_types" "all" {}
 				tfresource.TestCheckNoResourceAttr("data.arianet_plans.fra", "plans.0.traffic_gb"),
 				tfresource.TestCheckResourceAttr("data.arianet_plans.fra", "plans.1.traffic_gb", "20000"),
 				tfresource.TestCheckResourceAttr("data.arianet_plans.fra", "plans.1.available", "false"),
-				tfresource.TestCheckResourceAttr("data.arianet_pricing.all", "prices.#", "2"),
-				tfresource.TestCheckResourceAttr("data.arianet_pricing.all", "prices.0.monthly_price", "0.05"),
+				tfresource.TestCheckResourceAttr("data.arianet_pricing.all", "hours_per_month", "730"),
+				tfresource.TestCheckResourceAttr("data.arianet_pricing.all", "vat_included", "false"),
+				tfresource.TestCheckResourceAttr("data.arianet_pricing.all", "server_types.#", "2"),
+				tfresource.TestCheckResourceAttr("data.arianet_pricing.all", "server_types.0.prices.#", "2"),
+				tfresource.TestCheckNoResourceAttr("data.arianet_pricing.all", "server_types.0.included_traffic_gb"),
+				tfresource.TestCheckResourceAttr("data.arianet_pricing.all", "server_types.1.included_traffic_gb", "20000"),
+				tfresource.TestCheckResourceAttr("data.arianet_pricing.all", "resources.#", "3"),
 				tfresource.TestCheckResourceAttrSet("data.arianet_pricing.all", "raw_json"),
+				tfresource.TestCheckResourceAttr("data.arianet_pricing.fra", "server_types.#", "1"),
+				tfresource.TestCheckResourceAttr("data.arianet_pricing.fra", "server_types.0.prices.0.monthly_price", "7300"),
+				tfresource.TestCheckResourceAttr("data.arianet_pricing.fra", "server_types.0.prices.0.currency", "IRR"),
+				tfresource.TestCheckResourceAttr("data.arianet_pricing.fra", "resources.#", "2"),
+				tfresource.TestCheckResourceAttr("data.arianet_pricing.fra", "resources.1.percent", "20"),
+				tfresource.TestCheckNoResourceAttr("data.arianet_pricing.fra", "resources.0.percent"),
 				tfresource.TestCheckResourceAttr("data.arianet_load_balancer_types.all", "load_balancer_types.0.code", "lb11"),
 			),
 		}},
@@ -219,6 +233,7 @@ resource "arianet_server" "s" {
   ssh_keys     = ["ssh-ed25519 AAAA me"]
   firewall_ids = [arianet_firewall.web.id]
   backups      = ` + b + `
+  keep_backups = true
   labels       = { ` + labels + ` }
 }
 `
@@ -229,11 +244,20 @@ resource "arianet_server" "s" {
 			if len(m.servers) != 0 || len(m.firewalls) != 0 {
 				t.Errorf("left behind: %d servers, %d firewalls", len(m.servers), len(m.firewalls))
 			}
+			for _, q := range m.deletes {
+				if q != "keep_backups=true" {
+					t.Errorf("DELETE /servers query = %q, want keep_backups=true", q)
+				}
+			}
 			return nil
 		},
 		Steps: []tfresource.TestStep{
 			{
-				Config: cfg("web-1", `env = "prod"`, 1, false),
+				Config: cfg("web-1", `env = "prod"`, 1, false) + `
+data "arianet_server_costs" "s" {
+  server_id = arianet_server.s.id
+}
+`,
 				Check: tfresource.ComposeAggregateTestCheckFunc(
 					tfresource.TestCheckResourceAttr("arianet_server.s", "status", "running"),
 					tfresource.TestCheckResourceAttr("arianet_server.s", "labels.env", "prod"),
@@ -241,6 +265,10 @@ resource "arianet_server" "s" {
 					tfresource.TestCheckResourceAttr("arianet_server.s", "firewall_ids.#", "1"),
 					tfresource.TestCheckResourceAttr("arianet_server.s", "backups", "false"),
 					tfresource.TestCheckResourceAttrSet("arianet_server.s", "ipv4_address"),
+					tfresource.TestCheckResourceAttr("data.arianet_server_costs.s", "lines.#", "2"),
+					tfresource.TestCheckResourceAttr("data.arianet_server_costs.s", "totals.0.monthly_price", "8030"),
+					tfresource.TestCheckResourceAttr("data.arianet_server_costs.s", "snapshots.size_gb", "12.5"),
+					tfresource.TestCheckResourceAttr("data.arianet_server_costs.s", "hours_per_month", "730"),
 				),
 			},
 			{

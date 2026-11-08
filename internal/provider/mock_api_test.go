@@ -27,6 +27,7 @@ type mockAPI struct {
 	sshKeys   map[int64]*client.SSHKey
 	actions   map[int64]int // polls so far
 	requests  []string
+	deletes   []string // DELETE /servers query strings
 	srv       *httptest.Server
 }
 
@@ -235,10 +236,43 @@ func (m *mockAPI) routes(mux *http.ServeMux) {
 			{"id": 2, "datacenter": "eu-central-1", "name": "CX21", "vcpu": 2, "ram_mb": 4096, "disk_gb": 40, "traffic_gb": 20000, "hourly_price": 0.02, "monthly_price": 10, "currency": "EUR", "is_active": true, "availability": map[string]any{"available": false, "known": true, "reason": "ram"}},
 		}})
 	})
-	mux.HandleFunc("GET "+c+"/pricing", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"data": []map[string]any{
-			{"datacenter": "eu-central-1", "sku": "volume_gb", "unit": "gb", "hourly_price": 0.0001, "monthly_price": "0.05", "currency": "EUR", "is_active": true},
-			{"datacenter": "eu-central-1", "sku": "backup", "unit": "percent", "percent": 20, "currency": "EUR"},
+	mux.HandleFunc("GET "+c+"/public/pricing", func(w http.ResponseWriter, r *http.Request) {
+		price := func(n float64) map[string]any { return map[string]any{"net": n, "currency": "IRR"} }
+		writeJSON(w, 200, map[string]any{"pricing": map[string]any{
+			"vat_included": false, "hours_per_month": 730,
+			"server_types": []map[string]any{
+				{"id": 1, "name": "C2", "description": "", "group": "shared", "group_name": "Shared", "cores": 2, "memory_mb": 4096, "disk_gb": 40,
+					"included_traffic_gb": nil, "minimum_usage_hours": 1, "prices": []map[string]any{
+						{"location": "eu-central-1", "price_hourly": price(10), "price_monthly": price(7300)},
+						{"location": "tr-ist-1", "price_hourly": price(12), "price_monthly": price(8760)},
+					}},
+				{"id": 3, "name": "T4", "description": "", "group": "shared", "group_name": "Shared", "cores": 4, "memory_mb": 8192, "disk_gb": 80,
+					"included_traffic_gb": 20000, "minimum_usage_hours": 1, "prices": []map[string]any{
+						{"location": "tr-ist-1", "price_hourly": price(20), "price_monthly": price(14600)},
+					}},
+			},
+			"resources": []map[string]any{
+				{"sku": "volume_gb", "location": "eu-central-1", "unit": "gb_hour", "price_hourly": price(0.5), "price_monthly": price(365), "percent": nil},
+				{"sku": "backup", "location": "eu-central-1", "unit": "percent", "price_hourly": price(0), "price_monthly": price(0), "percent": 20},
+				{"sku": "volume_gb", "location": "tr-ist-1", "unit": "gb_hour", "price_hourly": price(0.6), "price_monthly": price(438), "percent": nil},
+			},
+		}})
+	})
+	mux.HandleFunc("GET "+c+"/servers/{id}/costs", func(w http.ResponseWriter, r *http.Request) {
+		s, ok := m.servers[pathID(r, "id")]
+		if !ok {
+			notFound(w)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"data": map[string]any{
+			"server_id": s.ID, "hours_per_month": 730,
+			"lines": []map[string]any{
+				{"type": "server", "id": s.ID, "name": s.Name, "sku": "plan", "quantity": 1, "unit": "hour", "hourly_price": 10, "monthly_price": 7300, "currency": "IRR"},
+				{"type": "primary_ipv4", "id": 9, "name": s.IPv4, "sku": "primary_ipv4", "quantity": 1, "unit": "hour", "hourly_price": 1, "monthly_price": 730, "currency": "IRR"},
+			},
+			"totals":       []map[string]any{{"currency": "IRR", "hourly_price": 11, "monthly_price": 8030}},
+			"snapshots":    map[string]any{"count": 1, "size_gb": 12.5, "hourly_price": 1, "monthly_price": 730, "currency": "IRR"},
+			"kept_backups": map[string]any{"count": 0, "size_gb": 0, "hourly_price": 0, "monthly_price": 0, "currency": "IRR"},
 		}})
 	})
 	mux.HandleFunc("GET "+c+"/load-balancer-types", func(w http.ResponseWriter, r *http.Request) {
@@ -324,6 +358,7 @@ func (m *mockAPI) routes(mux *http.ServeMux) {
 			notFound(w)
 			return
 		}
+		m.deletes = append(m.deletes, r.URL.RawQuery)
 		if s.ProtectionDelete {
 			writeJSON(w, 423, map[string]any{"error": "The server is protected.", "code": "protected"})
 			return

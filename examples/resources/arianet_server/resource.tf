@@ -15,6 +15,10 @@ resource "arianet_server" "web" {
   ssh_key_ids = [arianet_ssh_key.me.id]
   backups     = true
 
+  # On destroy: keep backups (billed per GB afterwards), delete snapshots.
+  keep_backups     = true
+  delete_snapshots = true
+
   labels = {
     env  = "prod"
     role = "web"
