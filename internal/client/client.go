@@ -282,6 +282,10 @@ func (c *Client) do(ctx context.Context, req request, out any) error {
 		if retryable && attempt < c.maxRetries {
 			wait := retryAfter(resp.Header.Get("Retry-After"))
 			if wait <= 0 {
+				// cloud-service also sends RateLimit-Reset: seconds until the window resets.
+				wait = retryAfter(resp.Header.Get("RateLimit-Reset"))
+			}
+			if wait <= 0 {
 				wait = backoff(attempt)
 			}
 			if serr := c.sleep(ctx, wait); serr != nil {

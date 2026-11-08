@@ -3,12 +3,12 @@
 page_title: "arianet_pricing Data Source - arianet"
 subcategory: ""
 description: |-
-  Prices (GET /cloud/v1/pricing). The full answer is in raw_json (use jsondecode); prices holds the well-known per-SKU fields when the answer is a list of SKU prices.
+  The public price list (GET /cloud/v1/public/pricing): every plan per location and every other price on sale, VAT excluded, from the rows billing uses.
 ---
 
 # arianet_pricing (Data Source)
 
-Prices (`GET /cloud/v1/pricing`). The full answer is in `raw_json` (use `jsondecode`); `prices` holds the well-known per-SKU fields when the answer is a list of SKU prices.
+The public price list (`GET /cloud/v1/public/pricing`): every plan per location and every other price on sale, VAT excluded, from the rows billing uses.
 
 ## Example Usage
 
@@ -17,12 +17,13 @@ data "arianet_pricing" "fra" {
   datacenter = "eu-central-1"
 }
 
-output "volume_gb_monthly" {
-  value = [for p in data.arianet_pricing.fra.prices : p.monthly_price if p.sku == "volume_gb"]
+# Monthly price of every plan in the datacenter.
+output "plan_monthly_prices" {
+  value = { for p in data.arianet_pricing.fra.server_types : p.name => p.prices[0].monthly_price }
 }
 
-output "raw" {
-  value = jsondecode(data.arianet_pricing.fra.raw_json)
+output "volume_gb_monthly" {
+  value = [for r in data.arianet_pricing.fra.resources : r.monthly_price if r.sku == "volume_gb"]
 }
 ```
 
@@ -31,22 +32,54 @@ output "raw" {
 
 ### Optional
 
-- `datacenter` (String) Only prices of this datacenter.
+- `datacenter` (String) Only prices in this datacenter (location); plans without a price there are left out.
 
 ### Read-Only
 
+- `hours_per_month` (Number) Hours monthly prices are quoted over.
 - `id` (String) Identifier of this lookup.
-- `prices` (Attributes List) SKU prices found in the answer's `data` list. (see [below for nested schema](#nestedatt--prices))
-- `raw_json` (String) The API's answer as JSON.
+- `raw_json` (String) The `pricing` object as JSON, for fields not modelled here (use `jsondecode`).
+- `resources` (Attributes List) Every other price on sale (IPs, volumes, snapshots, backups, NAT gateways, load balancers). (see [below for nested schema](#nestedatt--resources))
+- `server_types` (Attributes List) Plans and their price per location. (see [below for nested schema](#nestedatt--server_types))
+- `vat_included` (Boolean) Whether prices include VAT (always false).
 
-<a id="nestedatt--prices"></a>
-### Nested Schema for `prices`
+<a id="nestedatt--resources"></a>
+### Nested Schema for `resources`
 
 Read-Only:
 
-- `currency` (String) Currency.
-- `datacenter` (String) Datacenter.
-- `hourly_price` (Number) Hourly price.
-- `monthly_price` (Number) Monthly price.
-- `sku` (String) SKU, e.g. `volume_gb`, `backup`, `snapshot_gb`.
-- `unit` (String) Unit.
+- `currency` (String) Currency, e.g. `IRR`.
+- `hourly_price` (Number) Hourly price, VAT excluded.
+- `location` (String) Datacenter code.
+- `monthly_price` (Number) Monthly price, VAT excluded.
+- `percent` (Number) The share of the plan for a `percent` SKU (backups); null otherwise.
+- `sku` (String) SKU: `primary_ipv4`, `floating_ipv4`, `floating_ipv6`, `elastic_ipv4`, `volume_gb`, `snapshot_gb`, `backup`, `nat_gateway`, or a load balancer type such as `lb11`.
+- `unit` (String) `hour` (per resource), `gb_hour` (per GB) or `percent` (a share of the server's plan; prices are 0).
+
+
+<a id="nestedatt--server_types"></a>
+### Nested Schema for `server_types`
+
+Read-Only:
+
+- `cores` (Number) vCPUs.
+- `description` (String) Description.
+- `disk_gb` (Number) Disk in GB.
+- `group` (String) Plan group key.
+- `group_name` (String) Plan group name.
+- `id` (Number) Plan ID (`arianet_server.plan_id`).
+- `included_traffic_gb` (Number) Included traffic; null when not metered.
+- `memory_mb` (Number) Memory in MB.
+- `minimum_usage_hours` (Number) Hours charged up front when a server is created.
+- `name` (String) Name.
+- `prices` (Attributes List) Price per location. (see [below for nested schema](#nestedatt--server_types--prices))
+
+<a id="nestedatt--server_types--prices"></a>
+### Nested Schema for `server_types.prices`
+
+Read-Only:
+
+- `currency` (String) Currency, e.g. `IRR`.
+- `hourly_price` (Number) Hourly price, VAT excluded.
+- `location` (String) Datacenter code.
+- `monthly_price` (Number) Monthly price, VAT excluded.

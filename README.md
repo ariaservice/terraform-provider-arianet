@@ -70,7 +70,7 @@ development.
   cloud-service). SSH keys: `<endpoint>/api/v1/ssh-keys`.
 * Long operations return an action; the provider polls `GET /cloud/v1/actions/{id}`
   until `success` or `error`, bounded by each resource's `timeouts` block.
-* HTTP 429 is retried honouring `Retry-After`; reads are also retried on
+* HTTP 429 is retried honouring `Retry-After` (or `RateLimit-Reset` when that is the only hint); reads are also retried on
   502/503/504. Redirects to another host are refused.
 * A resource that answers 404 on refresh is removed from the state.
 
@@ -92,7 +92,8 @@ once published, on the Terraform Registry. Every resource supports
 | `arianet_ssh_key` | arianet-api `/api/v1/ssh-keys` |
 
 Data sources: `arianet_images`, `arianet_image`, `arianet_plans`,
-`arianet_locations`, `arianet_pricing`, `arianet_load_balancer_types`,
+`arianet_locations`, `arianet_pricing` (public price list, `/cloud/v1/public/pricing`),
+`arianet_server_costs` (`/servers/{id}/costs`), `arianet_load_balancer_types`,
 `arianet_server`, `arianet_network`, `arianet_ssh_key`.
 
 ## Development

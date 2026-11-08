@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"time"
@@ -241,14 +242,64 @@ func (c *Client) ListLoadBalancerTypes(ctx context.Context) ([]LoadBalancerType,
 	return out.Data, err
 }
 
-// Pricing is GET /pricing as raw JSON: its shape is still moving, so callers
-// read what they know and keep the rest.
-func (c *Client) Pricing(ctx context.Context, datacenter string) (json.RawMessage, error) {
-	q := url.Values{}
-	if datacenter != "" {
-		q.Set("datacenter", datacenter)
+// PublicPrice is an amount, VAT excluded.
+type PublicPrice struct {
+	Net      float64 `json:"net"`
+	Currency string  `json:"currency"`
+}
+
+// PublicLocationPrice is a plan's price in one datacenter.
+type PublicLocationPrice struct {
+	Location     string      `json:"location"`
+	PriceHourly  PublicPrice `json:"price_hourly"`
+	PriceMonthly PublicPrice `json:"price_monthly"`
+}
+
+// PublicServerType is a plan on the public price list.
+type PublicServerType struct {
+	ID                int64                 `json:"id"`
+	Name              string                `json:"name"`
+	Description       string                `json:"description"`
+	Group             string                `json:"group"`
+	GroupName         string                `json:"group_name"`
+	Cores             int64                 `json:"cores"`
+	MemoryMB          int64                 `json:"memory_mb"`
+	DiskGB            int64                 `json:"disk_gb"`
+	IncludedTrafficGB *int64                `json:"included_traffic_gb"`
+	MinimumUsageHours int64                 `json:"minimum_usage_hours"`
+	Prices            []PublicLocationPrice `json:"prices"`
+}
+
+// PublicResourcePrice is a non-plan SKU price (IPs, volumes, backups, ...).
+type PublicResourcePrice struct {
+	SKU          string      `json:"sku"`
+	Location     string      `json:"location"`
+	Unit         string      `json:"unit"`
+	PriceHourly  PublicPrice `json:"price_hourly"`
+	PriceMonthly PublicPrice `json:"price_monthly"`
+	Percent      *float64    `json:"percent"`
+}
+
+// PublicPricing is the public price list.
+type PublicPricing struct {
+	VATIncluded   bool                  `json:"vat_included"`
+	HoursPerMonth int64                 `json:"hours_per_month"`
+	ServerTypes   []PublicServerType    `json:"server_types"`
+	Resources     []PublicResourcePrice `json:"resources"`
+}
+
+// PublicPricing is GET /public/pricing (no token needed): the typed list and
+// the raw "pricing" object.
+func (c *Client) PublicPricing(ctx context.Context) (PublicPricing, json.RawMessage, error) {
+	var out struct {
+		Pricing json.RawMessage `json:"pricing"`
 	}
-	var out json.RawMessage
-	err := c.Cloud(ctx, http.MethodGet, "/pricing", q, nil, &out)
-	return out, err
+	if err := c.Cloud(ctx, http.MethodGet, "/public/pricing", nil, nil, &out); err != nil {
+		return PublicPricing{}, nil, err
+	}
+	var p PublicPricing
+	if err := json.Unmarshal(out.Pricing, &p); err != nil {
+		return PublicPricing{}, out.Pricing, fmt.Errorf("decoding pricing: %w", err)
+	}
+	return p, out.Pricing, nil
 }

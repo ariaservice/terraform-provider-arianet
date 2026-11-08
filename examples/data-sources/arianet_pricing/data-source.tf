@@ -2,10 +2,11 @@ data "arianet_pricing" "fra" {
   datacenter = "eu-central-1"
 }
 
-output "volume_gb_monthly" {
-  value = [for p in data.arianet_pricing.fra.prices : p.monthly_price if p.sku == "volume_gb"]
+# Monthly price of every plan in the datacenter.
+output "plan_monthly_prices" {
+  value = { for p in data.arianet_pricing.fra.server_types : p.name => p.prices[0].monthly_price }
 }
 
-output "raw" {
-  value = jsondecode(data.arianet_pricing.fra.raw_json)
+output "volume_gb_monthly" {
+  value = [for r in data.arianet_pricing.fra.resources : r.monthly_price if r.sku == "volume_gb"]
 }

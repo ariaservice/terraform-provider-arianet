@@ -342,23 +342,96 @@ func TestSSHKeyEnvelopeAndPaging(t *testing.T) {
 	}
 }
 
-func TestDeleteServerBodyOnlyWhenAsked(t *testing.T) {
-	var bodies []string
+func TestDeleteServerQueryOnlyWhenAsked(t *testing.T) {
+	var queries []string
 	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		buf := make([]byte, 256)
-		n, _ := r.Body.Read(buf)
-		bodies = append(bodies, string(buf[:n]))
+		if r.ContentLength > 0 {
+			t.Error("DELETE /servers/{id} must not carry a body")
+		}
+		queries = append(queries, r.URL.RawQuery)
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte(`{"action_id":3}`))
 	}))
 	if _, err := c.DeleteServer(context.Background(), 1, DeleteServerOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.DeleteServer(context.Background(), 1, DeleteServerOptions{KeepBackups: true}); err != nil {
+	if _, err := c.DeleteServer(context.Background(), 1, DeleteServerOptions{KeepBackups: true, DeleteSnapshots: true}); err != nil {
 		t.Fatal(err)
 	}
-	if bodies[0] != "" || !strings.Contains(bodies[1], `"keep_backups":true`) {
-		t.Fatalf("bodies = %q", bodies)
+	if queries[0] != "" || queries[1] != "delete_snapshots=true&keep_backups=true" {
+		t.Fatalf("queries = %q", queries)
+	}
+}
+
+func TestRetries429WithOnlyRateLimitReset(t *testing.T) {
+	var calls int32
+	var waited []time.Duration
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			w.Header().Set("RateLimit-Limit", "60")
+			w.Header().Set("RateLimit-Remaining", "0")
+			w.Header().Set("RateLimit-Reset", "4")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":"Too many requests.","code":"rate_limit_exceeded"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"id":1}}`))
+	}))
+	c.sleep = func(_ context.Context, d time.Duration) error { waited = append(waited, d); return nil }
+	if _, err := c.GetServer(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	if len(waited) != 1 || waited[0] != 4*time.Second {
+		t.Fatalf("waited = %v", waited)
+	}
+}
+
+func TestRateLimitErrorShape(t *testing.T) {
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "1")
+		w.Header().Set("RateLimit-Reset", "1")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":"Too many requests.","code":"rate_limit_exceeded"}`))
+	}))
+	c.sleep = func(context.Context, time.Duration) error { return nil }
+	_, err := c.GetServer(context.Background(), 1)
+	var apiErr *Error
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != 429 || apiErr.Code != "rate_limit_exceeded" {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestPublicPricingAndServerCost(t *testing.T) {
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cloud/v1/public/pricing":
+			_, _ = w.Write([]byte(`{"pricing":{"vat_included":false,"hours_per_month":730,
+				"server_types":[{"id":1,"name":"C2","cores":2,"memory_mb":4096,"disk_gb":40,"included_traffic_gb":null,
+				"prices":[{"location":"ovh","price_hourly":{"net":10,"currency":"IRR"},"price_monthly":{"net":7300,"currency":"IRR"}}]}],
+				"resources":[{"sku":"backup","location":"ovh","unit":"percent","price_hourly":{"net":0,"currency":"IRR"},"price_monthly":{"net":0,"currency":"IRR"},"percent":20}]}}`))
+		case "/cloud/v1/servers/5/costs":
+			_, _ = w.Write([]byte(`{"data":{"server_id":5,"hours_per_month":730,"lines":[{"type":"server","id":5,"name":"web","sku":"plan","quantity":1,"unit":"hour","hourly_price":10,"monthly_price":7300,"currency":"IRR"}],
+				"totals":[{"currency":"IRR","hourly_price":10,"monthly_price":7300}],
+				"snapshots":{"count":1,"size_gb":12.5,"hourly_price":1,"monthly_price":730,"currency":"IRR"},
+				"kept_backups":{"count":0,"size_gb":0,"hourly_price":0,"monthly_price":0,"currency":"IRR"}}}`))
+		default:
+			t.Errorf("path = %s", r.URL.Path)
+		}
+	}))
+	p, raw, err := c.PublicPricing(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.HoursPerMonth != 730 || len(p.ServerTypes) != 1 || p.ServerTypes[0].IncludedTrafficGB != nil ||
+		p.ServerTypes[0].Prices[0].PriceMonthly.Net != 7300 || *p.Resources[0].Percent != 20 || len(raw) == 0 {
+		t.Fatalf("pricing = %+v", p)
+	}
+	cost, err := c.GetServerCost(context.Background(), 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cost.Totals[0].MonthlyPrice != 7300 || cost.Snapshots.SizeGB != 12.5 || cost.Lines[0].Type != "server" {
+		t.Fatalf("cost = %+v", cost)
 	}
 }
 

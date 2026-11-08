@@ -30,6 +30,10 @@ resource "arianet_server" "web" {
   ssh_key_ids = [arianet_ssh_key.me.id]
   backups     = true
 
+  # On destroy: keep backups (billed per GB afterwards), delete snapshots.
+  keep_backups     = true
+  delete_snapshots = true
+
   labels = {
     env  = "prod"
     role = "web"
@@ -59,11 +63,11 @@ resource "arianet_server" "web" {
 ### Optional
 
 - `backups` (Boolean) Whether daily backups are enabled (billed extra).
-- `delete_snapshots` (Boolean) On destroy: also delete the server's snapshots (sent only when true; needs a cloud-service that supports it).
+- `delete_snapshots` (Boolean) On destroy: also delete the server's snapshots, which otherwise stay billed. Sent as `?delete_snapshots=true`; set it and apply before destroying.
 - `enable_ipv4` (Boolean) Whether the server gets a public IPv4 address (API default: true). Changing it replaces the server.
 - `enable_ipv6` (Boolean) Whether the server gets a public IPv6 address where the datacenter has IPv6. Changing it replaces the server.
 - `firewall_ids` (Set of Number) Firewalls applied directly to this server. Changes apply/remove the firewalls. Do not combine with `apply_to` of `arianet_firewall` or `arianet_firewall_attachment` for the same server.
-- `keep_backups` (Boolean) On destroy: keep the server's backups (sent only when true; needs a cloud-service that supports it).
+- `keep_backups` (Boolean) On destroy: keep the server's backups (they stay billed per GB, see `arianet_server_costs.kept_backups`). Sent as `?keep_backups=true`; set it and apply before destroying.
 - `labels` (Map of String) User-defined labels (key/value pairs). Lists can be filtered by them with a label selector.
 - `network_ids` (Set of Number) Private networks the server is attached to at creation. Changing it replaces the server.
 - `placement_group_id` (Number) Placement group to create the server in. Changing it replaces the server.

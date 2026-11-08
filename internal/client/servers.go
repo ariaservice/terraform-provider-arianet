@@ -69,12 +69,12 @@ type UpdateServerRequest struct {
 	ProjectID         *int64             `json:"project_id,omitempty"`
 }
 
-// DeleteServerOptions are what DELETE /servers/{id} may be told about the
-// server's copies. They are sent as a JSON body only when one is true;
-// cloud-service versions that do not read them ignore the body.
+// DeleteServerOptions are what DELETE /servers/{id} is told about the
+// server's copies, as ?keep_backups=true / ?delete_snapshots=true (absent
+// means false).
 type DeleteServerOptions struct {
-	KeepBackups     bool `json:"keep_backups"`
-	DeleteSnapshots bool `json:"delete_snapshots"`
+	KeepBackups     bool
+	DeleteSnapshots bool
 }
 
 // BackupPlan is the server's backup schedule, nil when backups are off.
@@ -113,12 +113,15 @@ func (c *Client) UpdateServer(ctx context.Context, id int64, req UpdateServerReq
 }
 
 func (c *Client) DeleteServer(ctx context.Context, id int64, opts DeleteServerOptions) (int64, error) {
-	var body any
-	if opts.KeepBackups || opts.DeleteSnapshots {
-		body = opts
+	q := url.Values{}
+	if opts.KeepBackups {
+		q.Set("keep_backups", "true")
+	}
+	if opts.DeleteSnapshots {
+		q.Set("delete_snapshots", "true")
 	}
 	var out actionRef
-	err := c.Cloud(ctx, http.MethodDelete, idPath("/servers", id), nil, body, &out)
+	err := c.Cloud(ctx, http.MethodDelete, idPath("/servers", id), q, nil, &out)
 	return out.ActionID, err
 }
 
@@ -148,4 +151,49 @@ func (c *Client) ServerBackupPlan(ctx context.Context, id int64) (*BackupPlan, e
 	}
 	err := c.Cloud(ctx, http.MethodGet, idPath("/servers", id)+"/backups", nil, nil, &out)
 	return out.Plan, err
+}
+
+// CostLine is one billed piece of a server.
+type CostLine struct {
+	Type         string  `json:"type"`
+	ID           int64   `json:"id"`
+	Name         string  `json:"name"`
+	SKU          string  `json:"sku"`
+	Quantity     float64 `json:"quantity"`
+	Unit         string  `json:"unit"`
+	HourlyPrice  float64 `json:"hourly_price"`
+	MonthlyPrice float64 `json:"monthly_price"`
+	Currency     string  `json:"currency"`
+}
+
+// CostTotal is the sum of a server's lines in one currency.
+type CostTotal struct {
+	Currency     string  `json:"currency"`
+	HourlyPrice  float64 `json:"hourly_price"`
+	MonthlyPrice float64 `json:"monthly_price"`
+}
+
+// RetainedCost is what copies cost once the server is deleted.
+type RetainedCost struct {
+	Count        int64   `json:"count"`
+	SizeGB       float64 `json:"size_gb"`
+	HourlyPrice  float64 `json:"hourly_price"`
+	MonthlyPrice float64 `json:"monthly_price"`
+	Currency     string  `json:"currency"`
+}
+
+// ServerCost is GET /servers/{id}/costs.
+type ServerCost struct {
+	ServerID      int64        `json:"server_id"`
+	HoursPerMonth int64        `json:"hours_per_month"`
+	Lines         []CostLine   `json:"lines"`
+	Totals        []CostTotal  `json:"totals"`
+	Snapshots     RetainedCost `json:"snapshots"`
+	KeptBackups   RetainedCost `json:"kept_backups"`
+}
+
+func (c *Client) GetServerCost(ctx context.Context, id int64) (ServerCost, error) {
+	var out one[ServerCost]
+	err := c.Cloud(ctx, http.MethodGet, idPath("/servers", id)+"/costs", nil, nil, &out)
+	return out.Data, err
 }

@@ -2,10 +2,8 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
-	"strconv"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/datasourcevalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
@@ -381,9 +379,22 @@ func (d *locationsDataSource) Read(ctx context.Context, req datasource.ReadReque
 
 // ---------------------------------------------------------------- pricing
 
-var priceAttrTypes = map[string]attr.Type{
-	"datacenter": types.StringType, "sku": types.StringType, "unit": types.StringType,
+var locationPriceAttrTypes = map[string]attr.Type{
+	"location": types.StringType, "hourly_price": types.Float64Type,
+	"monthly_price": types.Float64Type, "currency": types.StringType,
+}
+
+var serverTypePriceAttrTypes = map[string]attr.Type{
+	"id": types.Int64Type, "name": types.StringType, "description": types.StringType, "group": types.StringType,
+	"group_name": types.StringType, "cores": types.Int64Type, "memory_mb": types.Int64Type, "disk_gb": types.Int64Type,
+	"included_traffic_gb": types.Int64Type, "minimum_usage_hours": types.Int64Type,
+	"prices": types.ListType{ElemType: types.ObjectType{AttrTypes: locationPriceAttrTypes}},
+}
+
+var resourcePriceAttrTypes = map[string]attr.Type{
+	"sku": types.StringType, "location": types.StringType, "unit": types.StringType,
 	"hourly_price": types.Float64Type, "monthly_price": types.Float64Type, "currency": types.StringType,
+	"percent": types.Float64Type,
 }
 
 type pricingDataSource struct{ dsBase }
@@ -391,84 +402,77 @@ type pricingDataSource struct{ dsBase }
 func newPricingDataSource() datasource.DataSource { return &pricingDataSource{} }
 
 type pricingModel struct {
-	ID         types.String `tfsdk:"id"`
-	Datacenter types.String `tfsdk:"datacenter"`
-	RawJSON    types.String `tfsdk:"raw_json"`
-	Prices     types.List   `tfsdk:"prices"`
+	ID            types.String `tfsdk:"id"`
+	Datacenter    types.String `tfsdk:"datacenter"`
+	VATIncluded   types.Bool   `tfsdk:"vat_included"`
+	HoursPerMonth types.Int64  `tfsdk:"hours_per_month"`
+	ServerTypes   types.List   `tfsdk:"server_types"`
+	Resources     types.List   `tfsdk:"resources"`
+	RawJSON       types.String `tfsdk:"raw_json"`
 }
 
 func (d *pricingDataSource) Metadata(_ context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_pricing"
 }
 
+func priceAttrs() map[string]schema.Attribute {
+	return map[string]schema.Attribute{
+		"location":      schema.StringAttribute{Computed: true, Description: "Datacenter code."},
+		"hourly_price":  schema.Float64Attribute{Computed: true, Description: "Hourly price, VAT excluded."},
+		"monthly_price": schema.Float64Attribute{Computed: true, Description: "Monthly price, VAT excluded."},
+		"currency":      schema.StringAttribute{Computed: true, Description: "Currency, e.g. `IRR`."},
+	}
+}
+
 func (d *pricingDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
+	resources := priceAttrs()
+	resources["sku"] = schema.StringAttribute{Computed: true, Description: "SKU: `primary_ipv4`, `floating_ipv4`, `floating_ipv6`, `elastic_ipv4`, `volume_gb`, `snapshot_gb`, `backup`, `nat_gateway`, or a load balancer type such as `lb11`."}
+	resources["unit"] = schema.StringAttribute{Computed: true, Description: "`hour` (per resource), `gb_hour` (per GB) or `percent` (a share of the server's plan; prices are 0)."}
+	resources["percent"] = schema.Float64Attribute{Computed: true, Description: "The share of the plan for a `percent` SKU (backups); null otherwise."}
 	resp.Schema = schema.Schema{
-		Description: "Prices (`GET /cloud/v1/pricing`). The full answer is in `raw_json` (use `jsondecode`); `prices` holds the well-known per-SKU fields when the answer is a list of SKU prices.",
+		Description: "The public price list (`GET /cloud/v1/public/pricing`): every plan per location and every other price on sale, VAT excluded, from the rows billing uses.",
 		Attributes: map[string]schema.Attribute{
-			"id":         schema.StringAttribute{Computed: true, Description: "Identifier of this lookup."},
-			"datacenter": schema.StringAttribute{Optional: true, Description: "Only prices of this datacenter."},
-			"raw_json":   schema.StringAttribute{Computed: true, Description: "The API's answer as JSON."},
-			"prices": schema.ListNestedAttribute{
-				Computed: true, Description: "SKU prices found in the answer's `data` list.",
+			"id":              schema.StringAttribute{Computed: true, Description: "Identifier of this lookup."},
+			"datacenter":      schema.StringAttribute{Optional: true, Description: "Only prices in this datacenter (location); plans without a price there are left out."},
+			"vat_included":    schema.BoolAttribute{Computed: true, Description: "Whether prices include VAT (always false)."},
+			"hours_per_month": schema.Int64Attribute{Computed: true, Description: "Hours monthly prices are quoted over."},
+			"server_types": schema.ListNestedAttribute{
+				Computed: true, Description: "Plans and their price per location.",
 				NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
-					"datacenter":    schema.StringAttribute{Computed: true, Description: "Datacenter."},
-					"sku":           schema.StringAttribute{Computed: true, Description: "SKU, e.g. `volume_gb`, `backup`, `snapshot_gb`."},
-					"unit":          schema.StringAttribute{Computed: true, Description: "Unit."},
-					"hourly_price":  schema.Float64Attribute{Computed: true, Description: "Hourly price."},
-					"monthly_price": schema.Float64Attribute{Computed: true, Description: "Monthly price."},
-					"currency":      schema.StringAttribute{Computed: true, Description: "Currency."},
+					"id":                  schema.Int64Attribute{Computed: true, Description: "Plan ID (`arianet_server.plan_id`)."},
+					"name":                schema.StringAttribute{Computed: true, Description: "Name."},
+					"description":         schema.StringAttribute{Computed: true, Description: "Description."},
+					"group":               schema.StringAttribute{Computed: true, Description: "Plan group key."},
+					"group_name":          schema.StringAttribute{Computed: true, Description: "Plan group name."},
+					"cores":               schema.Int64Attribute{Computed: true, Description: "vCPUs."},
+					"memory_mb":           schema.Int64Attribute{Computed: true, Description: "Memory in MB."},
+					"disk_gb":             schema.Int64Attribute{Computed: true, Description: "Disk in GB."},
+					"included_traffic_gb": schema.Int64Attribute{Computed: true, Description: "Included traffic; null when not metered."},
+					"minimum_usage_hours": schema.Int64Attribute{Computed: true, Description: "Hours charged up front when a server is created."},
+					"prices": schema.ListNestedAttribute{
+						Computed: true, Description: "Price per location.",
+						NestedObject: schema.NestedAttributeObject{Attributes: priceAttrs()},
+					},
 				}},
 			},
+			"resources": schema.ListNestedAttribute{
+				Computed: true, Description: "Every other price on sale (IPs, volumes, snapshots, backups, NAT gateways, load balancers).",
+				NestedObject: schema.NestedAttributeObject{Attributes: resources},
+			},
+			"raw_json": schema.StringAttribute{Computed: true, Description: "The `pricing` object as JSON, for fields not modelled here (use `jsondecode`)."},
 		},
 	}
 }
 
-// looseString reads a JSON string or number as a string.
-func looseString(v any) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	case float64:
-		return strconv.FormatFloat(t, 'f', -1, 64)
-	case bool:
-		return strconv.FormatBool(t)
+func locationPriceValue(location string, hourly, monthly client.PublicPrice) attr.Value {
+	currency := monthly.Currency
+	if currency == "" {
+		currency = hourly.Currency
 	}
-	return ""
-}
-
-// looseFloat reads a JSON number or numeric string.
-func looseFloat(v any) float64 {
-	switch t := v.(type) {
-	case float64:
-		return t
-	case string:
-		f, _ := strconv.ParseFloat(t, 64)
-		return f
-	}
-	return 0
-}
-
-// pricesFrom extracts SKU rows from {"data": [ {...}, ... ]}; anything else gives none.
-func pricesFrom(raw json.RawMessage) []map[string]attr.Value {
-	var body struct {
-		Data []map[string]any `json:"data"`
-	}
-	if json.Unmarshal(raw, &body) != nil {
-		return nil
-	}
-	out := []map[string]attr.Value{}
-	for _, row := range body.Data {
-		sku := looseString(row["sku"])
-		if sku == "" {
-			continue
-		}
-		out = append(out, map[string]attr.Value{
-			"datacenter": types.StringValue(looseString(row["datacenter"])), "sku": types.StringValue(sku),
-			"unit": types.StringValue(looseString(row["unit"])), "hourly_price": types.Float64Value(looseFloat(row["hourly_price"])),
-			"monthly_price": types.Float64Value(looseFloat(row["monthly_price"])), "currency": types.StringValue(looseString(row["currency"])),
-		})
-	}
-	return out
+	return types.ObjectValueMust(locationPriceAttrTypes, map[string]attr.Value{
+		"location": types.StringValue(location), "hourly_price": types.Float64Value(hourly.Net),
+		"monthly_price": types.Float64Value(monthly.Net), "currency": types.StringValue(currency),
+	})
 }
 
 func (d *pricingDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
@@ -477,19 +481,56 @@ func (d *pricingDataSource) Read(ctx context.Context, req datasource.ReadRequest
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	raw, err := d.client.Pricing(ctx, m.Datacenter.ValueString())
+	p, raw, err := d.client.PublicPricing(ctx)
 	if err != nil {
 		addAPIError(&resp.Diagnostics, "Reading prices failed", err)
 		return
 	}
-	rows := pricesFrom(raw)
-	vals := make([]attr.Value, 0, len(rows))
-	for _, row := range rows {
-		vals = append(vals, types.ObjectValueMust(priceAttrTypes, row))
+	only := m.Datacenter.ValueString()
+
+	plans := []attr.Value{}
+	for _, st := range p.ServerTypes {
+		prices := []attr.Value{}
+		for _, lp := range st.Prices {
+			if only == "" || lp.Location == only {
+				prices = append(prices, locationPriceValue(lp.Location, lp.PriceHourly, lp.PriceMonthly))
+			}
+		}
+		if only != "" && len(prices) == 0 {
+			continue
+		}
+		plans = append(plans, types.ObjectValueMust(serverTypePriceAttrTypes, map[string]attr.Value{
+			"id": types.Int64Value(st.ID), "name": types.StringValue(st.Name), "description": types.StringValue(st.Description),
+			"group": types.StringValue(st.Group), "group_name": types.StringValue(st.GroupName), "cores": types.Int64Value(st.Cores),
+			"memory_mb": types.Int64Value(st.MemoryMB), "disk_gb": types.Int64Value(st.DiskGB),
+			"included_traffic_gb": ptrInt64Value(st.IncludedTrafficGB), "minimum_usage_hours": types.Int64Value(st.MinimumUsageHours),
+			"prices": types.ListValueMust(types.ObjectType{AttrTypes: locationPriceAttrTypes}, prices),
+		}))
 	}
+
+	res := []attr.Value{}
+	for _, rp := range p.Resources {
+		if only != "" && rp.Location != only {
+			continue
+		}
+		percent := types.Float64Null()
+		if rp.Percent != nil {
+			percent = types.Float64Value(*rp.Percent)
+		}
+		lp := locationPriceValue(rp.Location, rp.PriceHourly, rp.PriceMonthly).(types.Object).Attributes()
+		vals := map[string]attr.Value{"sku": types.StringValue(rp.SKU), "unit": types.StringValue(rp.Unit), "percent": percent}
+		for k, v := range lp {
+			vals[k] = v
+		}
+		res = append(res, types.ObjectValueMust(resourcePriceAttrTypes, vals))
+	}
+
+	m.VATIncluded = types.BoolValue(p.VATIncluded)
+	m.HoursPerMonth = types.Int64Value(p.HoursPerMonth)
+	m.ServerTypes = types.ListValueMust(types.ObjectType{AttrTypes: serverTypePriceAttrTypes}, plans)
+	m.Resources = types.ListValueMust(types.ObjectType{AttrTypes: resourcePriceAttrTypes}, res)
 	m.RawJSON = types.StringValue(string(raw))
-	m.Prices = types.ListValueMust(types.ObjectType{AttrTypes: priceAttrTypes}, vals)
-	m.ID = types.StringValue("pricing/" + m.Datacenter.ValueString())
+	m.ID = types.StringValue("pricing/" + only)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &m)...)
 }
 
