@@ -70,7 +70,6 @@ resource "arianet_server" "web" {
 - `keep_backups` (Boolean) On destroy: keep the server's backups (they stay billed per GB, see `arianet_server_costs.kept_backups`). Sent as `?keep_backups=true`; set it and apply before destroying.
 - `labels` (Map of String) User-defined labels (key/value pairs). Lists can be filtered by them with a label selector.
 - `network_ids` (Set of Number) Private networks the server is attached to at creation. Changing it replaces the server.
-- `placement_group_id` (Number) Placement group to create the server in. Changing it replaces the server.
 - `project_id` (Number) ID of the project the resource is in. Defaults to the account's default project; changing it moves the resource.
 - `protection_delete` (Boolean) Whether the resource is protected from deletion. Must be set to false before the resource can be destroyed.
 - `protection_rebuild` (Boolean) Whether the server is protected from being rebuilt.

@@ -55,7 +55,7 @@ func (p *arianetProvider) Metadata(_ context.Context, _ provider.MetadataRequest
 
 func (p *arianetProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "The arianet provider manages arianet Cloud resources (servers, volumes, networks, firewalls, floating IPs, load balancers, placement groups) and account SSH keys through the arianet API.",
+		Description: "The arianet provider manages arianet Cloud resources (servers, volumes, networks, firewalls, floating IPs, load balancers) and account SSH keys through the arianet API.",
 		Attributes: map[string]schema.Attribute{
 			"endpoint": schema.StringAttribute{
 				Optional:    true,
@@ -143,7 +143,6 @@ func (p *arianetProvider) Resources(_ context.Context) []func() resource.Resourc
 		newFloatingIPResource,
 		newFloatingIPAssignmentResource,
 		newSSHKeyResource,
-		newPlacementGroupResource,
 		newLoadBalancerResource,
 		newLoadBalancerServiceResource,
 		newLoadBalancerTargetResource,

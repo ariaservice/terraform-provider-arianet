@@ -46,7 +46,6 @@ type CreateServerRequest struct {
 	UserData         string            `json:"user_data,omitempty"`
 	StartAfterCreate *bool             `json:"start_after_create,omitempty"`
 	FirewallIDs      []int64           `json:"firewall_ids,omitempty"`
-	PlacementGroupID *int64            `json:"placement_group_id,omitempty"`
 	Backups          bool              `json:"backups,omitempty"`
 	Networks         *ServerNetworks   `json:"networks,omitempty"`
 	Labels           map[string]string `json:"labels,omitempty"`
