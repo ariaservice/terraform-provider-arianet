@@ -89,58 +89,6 @@ func (c *Client) ChangeFloatingIPDNSPtr(ctx context.Context, id int64, ptr strin
 	return c.floatingIPAction(ctx, id, "change_dns_ptr", map[string]any{"dns_ptr": v})
 }
 
-// ---------------------------------------------------------------- placement groups
-
-// PlacementGroup is a placement group.
-type PlacementGroup struct {
-	ID         int64             `json:"id"`
-	Name       string            `json:"name"`
-	Type       string            `json:"type"`
-	Datacenter string            `json:"datacenter"`
-	Status     string            `json:"status"`
-	Servers    []int64           `json:"servers"`
-	MaxServers int64             `json:"max_servers"`
-	Labels     map[string]string `json:"labels"`
-	ProjectID  int64             `json:"project_id"`
-	CreatedAt  time.Time         `json:"created_at"`
-}
-
-// CreatePlacementGroupRequest is POST /placement-groups.
-type CreatePlacementGroupRequest struct {
-	Name       string            `json:"name"`
-	Datacenter string            `json:"datacenter"`
-	Type       string            `json:"type,omitempty"`
-	Labels     map[string]string `json:"labels,omitempty"`
-	ProjectID  *int64            `json:"project_id,omitempty"`
-}
-
-func (c *Client) GetPlacementGroup(ctx context.Context, id int64) (PlacementGroup, error) {
-	var out one[PlacementGroup]
-	err := c.Cloud(ctx, http.MethodGet, idPath("/placement-groups", id), nil, nil, &out)
-	return out.Data, err
-}
-
-func (c *Client) CreatePlacementGroup(ctx context.Context, req CreatePlacementGroupRequest) (PlacementGroup, int64, error) {
-	var out struct {
-		Data     PlacementGroup `json:"data"`
-		ActionID int64          `json:"action_id"`
-	}
-	err := c.Cloud(ctx, http.MethodPost, "/placement-groups", nil, req, &out)
-	return out.Data, out.ActionID, err
-}
-
-func (c *Client) UpdatePlacementGroup(ctx context.Context, id int64, req UpdateRequest) (PlacementGroup, error) {
-	var out one[PlacementGroup]
-	err := c.Cloud(ctx, http.MethodPatch, idPath("/placement-groups", id), nil, req, &out)
-	return out.Data, err
-}
-
-func (c *Client) DeletePlacementGroup(ctx context.Context, id int64) (int64, error) {
-	var out actionRef
-	err := c.Cloud(ctx, http.MethodDelete, idPath("/placement-groups", id), nil, nil, &out)
-	return out.ActionID, err
-}
-
 // ---------------------------------------------------------------- catalog
 
 // Datacenter is a location servers can be created in.

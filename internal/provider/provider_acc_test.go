@@ -84,7 +84,7 @@ resource "arianet_ssh_key" "k" {
 	})
 }
 
-func TestAccNetworkFirewallPlacementGroup(t *testing.T) {
+func TestAccNetworkFirewall(t *testing.T) {
 	name := accName("net")
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -119,16 +119,11 @@ resource "arianet_firewall" "fw" {
   }
   apply_to = [{ label_selector = "tfacc=%[1]s" }]
 }
-resource "arianet_placement_group" "pg" {
-  name       = %[1]q
-  datacenter = %[2]q
-}
 `, name, accDatacenter()),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("arianet_network.n", "subnets.#", "1"),
 					resource.TestCheckResourceAttrSet("arianet_network_subnet.s", "subnet_id"),
 					resource.TestCheckResourceAttr("arianet_firewall.fw", "apply_to.#", "1"),
-					resource.TestCheckResourceAttr("arianet_placement_group.pg", "type", "spread"),
 				),
 			},
 			{ResourceName: "arianet_network.n", ImportState: true, ImportStateVerify: true, ImportStateVerifyIgnore: []string{"timeouts", "subnets", "routes", "status"}},

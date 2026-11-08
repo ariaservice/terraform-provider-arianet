@@ -2,7 +2,7 @@
 
 `ariaservice/arianet` manages arianet Cloud resources through the arianet API:
 servers, volumes, private networks (subnets, routes), firewalls, floating IPs,
-placement groups, load balancers (services, targets) and the account's SSH keys.
+load balancers (services, targets) and the account's SSH keys.
 
 Built with [terraform-plugin-framework](https://github.com/hashicorp/terraform-plugin-framework), protocol 6 (Terraform >= 1.0).
 
@@ -87,7 +87,6 @@ once published, on the Terraform Registry. Every resource supports
 | `arianet_network`, `arianet_network_subnet`, `arianet_network_route` | `/networks`, `/networks/{id}/subnets`, `PUT /networks/{id}/routes` |
 | `arianet_firewall`, `arianet_firewall_attachment` | `/firewalls`, actions `apply_to_resources`/`remove_from_resources` |
 | `arianet_floating_ip`, `arianet_floating_ip_assignment` | `/floating-ips`, actions `assign`/`unassign`/`change_dns_ptr` |
-| `arianet_placement_group` | `/placement-groups` |
 | `arianet_load_balancer`, `arianet_load_balancer_service`, `arianet_load_balancer_target` | `/load-balancers`, actions `add_service`/`update_service`/`delete_service`, `add_target`/`remove_target`, `change_type`, `change_algorithm`, `attach_to_network`/`detach_from_network` |
 | `arianet_ssh_key` | arianet-api `/api/v1/ssh-keys` |
 

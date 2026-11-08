@@ -1,1 +1,0 @@
-terraform import arianet_placement_group.spread 3

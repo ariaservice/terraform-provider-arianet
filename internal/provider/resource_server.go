@@ -10,7 +10,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
@@ -41,7 +40,6 @@ type serverModel struct {
 	UserData          types.String   `tfsdk:"user_data"`
 	StartAfterCreate  types.Bool     `tfsdk:"start_after_create"`
 	FirewallIDs       types.Set      `tfsdk:"firewall_ids"`
-	PlacementGroupID  types.Int64    `tfsdk:"placement_group_id"`
 	Backups           types.Bool     `tfsdk:"backups"`
 	EnableIPv4        types.Bool     `tfsdk:"enable_ipv4"`
 	EnableIPv6        types.Bool     `tfsdk:"enable_ipv6"`
@@ -121,11 +119,6 @@ func (r *serverResource) Schema(ctx context.Context, _ resource.SchemaRequest, r
 				Computed:      true,
 				Description:   "Firewalls applied directly to this server. Changes apply/remove the firewalls. Do not combine with `apply_to` of `arianet_firewall` or `arianet_firewall_attachment` for the same server.",
 				PlanModifiers: []planmodifier.Set{setplanmodifier.UseStateForUnknown()},
-			},
-			"placement_group_id": schema.Int64Attribute{
-				Optional:      true,
-				Description:   "Placement group to create the server in. Changing it replaces the server.",
-				PlanModifiers: []planmodifier.Int64{int64planmodifier.RequiresReplace()},
 			},
 			"backups": schema.BoolAttribute{
 				Optional:    true,
@@ -223,7 +216,6 @@ func (r *serverResource) Create(ctx context.Context, req resource.CreateRequest,
 	start := plan.StartAfterCreate.ValueBool()
 	body.StartAfterCreate = &start
 	body.FirewallIDs = int64sFrom(ctx, plan.FirewallIDs, &resp.Diagnostics)
-	body.PlacementGroupID = optionalInt64(plan.PlacementGroupID)
 	if !plan.EnableIPv4.IsNull() || !plan.EnableIPv6.IsNull() || !plan.NetworkIDs.IsNull() {
 		n := &client.ServerNetworks{NetworkIDs: int64sFrom(ctx, plan.NetworkIDs, &resp.Diagnostics)}
 		if !plan.EnableIPv4.IsNull() {
