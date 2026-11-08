@@ -52,7 +52,7 @@ release:
   extra_files:
     - glob: "terraform-registry-manifest.json"
       name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"
-  # Manually inspect the draft before publishing it.
-  draft: true
+  # Published, not draft: the Terraform Registry only picks up published releases.
+  draft: false
 changelog:
   disable: true
